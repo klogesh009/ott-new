@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WhereToWatch">
+<meta name="theme-color" content="#0b0d12">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>WhereToWatch</title>
+<style>
+  :root { --bg:#0b0d12; --card:#161a23; --text:#eef1f6; --muted:#8b93a5; --accent:#ff5a3c; --line:#252b38; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;
+         padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 24px); }
+  header { display:flex; align-items:center; justify-content:space-between; padding:14px 0 8px; }
+  h1 { font-size:22px; margin:0; }
+  .gear { background:none; border:0; color:var(--muted); font-size:22px; padding:6px; }
+  .search { display:flex; gap:8px; margin:8px 0 14px; }
+  input[type=search], input[type=text], select {
+    flex:1; background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:12px;
+    padding:13px 14px; font-size:17px; outline:none; width:100%; }
+  button.primary { background:var(--accent); color:#fff; border:0; border-radius:12px; padding:0 18px; font-size:16px; font-weight:600; }
+  .row { display:flex; gap:12px; background:var(--card); border-radius:14px; padding:10px; margin-bottom:10px; align-items:center; }
+  .row img, .row .noimg { width:56px; height:84px; border-radius:8px; object-fit:cover; background:#222; flex:none; }
+  .row .t { font-weight:600; }
+  .row .s { color:var(--muted); font-size:14px; }
+  .hero { display:flex; gap:14px; margin-bottom:14px; }
+  .hero img { width:110px; border-radius:12px; }
+  .hero h2 { margin:0 0 4px; font-size:20px; }
+  .back { background:none; border:0; color:var(--accent); font-size:16px; padding:6px 0 10px; }
+  .sec { margin:16px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--line);
+          border-radius:12px; padding:6px 12px 6px 6px; text-decoration:none; color:var(--text); font-size:15px; }
+  .chip img { width:30px; height:30px; border-radius:7px; }
+  .chip.yt { border-color:#ff0000; }
+  .msg { color:var(--muted); padding:18px 4px; text-align:center; }
+  .err { color:#ff8a7a; }
+  .btn { display:block; text-align:center; background:var(--card); border:1px solid var(--line); color:var(--text);
+         text-decoration:none; padding:13px; border-radius:12px; margin-top:10px; font-weight:600; }
+  .foot { color:var(--muted); font-size:12px; margin-top:26px; text-align:center; }
+  label { display:block; color:var(--muted); font-size:13px; margin:14px 0 6px; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 WhereToWatch</h1>
+  <button class="gear" id="gear" aria-label="Settings">⚙︎</button>
+</header>
+
+<section id="settings" hidden>
+  <label>TMDB API key (v3 key or v4 read token)</label>
+  <input type="text" id="key" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Paste key">
+  <label>Region</label>
+  <select id="region">
+    <option value="IN">India</option><option value="US">United States</option><option value="GB">United Kingdom</option>
+    <option value="AE">UAE</option><option value="SG">Singapore</option><option value="AU">Australia</option>
+    <option value="CA">Canada</option>
+  </select>
+  <div style="display:flex;gap:8px;margin-top:14px">
+    <button class="primary" id="save" style="padding:13px 18px">Save</button>
+    <button class="primary" id="test" style="padding:13px 18px;background:#2a3142">Test key</button>
+  </div>
+  <p class="msg" id="testout"></p>
+  <p class="msg">Free key: themoviedb.org → Settings → API. Stored only on this device.</p>
+</section>
+
+<main id="main">
+  <form class="search" id="form">
+    <input type="search" id="q" placeholder="Movie name…" enterkeyhint="search" autocomplete="off">
+    <button class="primary" type="submit">Go</button>
+  </form>
+  <div id="out"><p class="msg" id="hint">Type a movie name to see where it's streaming.</p></div>
+</main>
+
+<div class="foot">Streaming data via TMDB / JustWatch. Availability changes often.</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const store = { get:k => { try { return localStorage.getItem(k) } catch { return null } },
+                set:(k,v) => { try { localStorage.setItem(k,v) } catch {} } };
+const API = 'https://api.themoviedb.org/3';
+const IMG = 'https://image.tmdb.org/t/p/';
+let state = { key: store.get('tmdb_key') || '', region: store.get('region') || 'IN' };
+
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function tmdb(path, params = {}) {
+  const url = new URL(API + path);
+  const headers = { accept: 'application/json' };
+  if (state.key.length > 40) headers.Authorization = 'Bearer ' + state.key;
+  else url.searchParams.set('api_key', state.key);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  let r;
+  try { r = await fetch(url, { headers }); }
+  catch (e) { throw new Error('Cannot reach TMDB (' + e.message + '). Check internet/VPN/ad-blocker, or open the app from its https:// URL instead of a local file.'); }
+  if (r.status === 401) throw new Error('TMDB rejected the key (401). Re-copy it from themoviedb.org → Settings → API.');
+  if (!r.ok) throw new Error('TMDB error ' + r.status);
+  return r.json();
+}
+
+function showSettings(show) {
+  $('#settings').hidden = !show; $('#main').hidden = show;
+  $('#key').value = state.key; $('#region').value = state.region;
+}
+$('#gear').onclick = () => showSettings($('#settings').hidden);
+$('#save').onclick = () => {
+  state.key = $('#key').value.trim(); state.region = $('#region').value;
+  store.set('tmdb_key', state.key); store.set('region', state.region);
+  showSettings(false);
+  if (lastQuery) search(lastQuery);
+};
+
+$('#test').onclick = async () => {
+  state.key = $('#key').value.trim();
+  const o = $('#testout'); o.className = 'msg'; o.textContent = 'Testing…';
+  try { await tmdb('/configuration'); o.textContent = '✅ Key works. Tap Save.'; }
+  catch (e) { o.className = 'msg err'; o.textContent = '❌ ' + e.message; }
+};
+
+let lastQuery = '';
+$('#form').onsubmit = e => { e.preventDefault(); const q = $('#q').value.trim(); if (q) { $('#q').blur(); search(q); } };
+
+async function search(q) {
+  lastQuery = q;
+  if (!state.key) { showSettings(true); return; }
+  $('#out').innerHTML = '<p class="msg">Searching…</p>';
+  try {
+    const d = await tmdb('/search/movie', { query: q, include_adult: 'false' });
+    if (!d.results.length) { $('#out').innerHTML = '<p class="msg">No movies found.</p>'; return; }
+    $('#out').innerHTML = d.results.slice(0, 15).map(m => `
+      <div class="row" data-id="${m.id}">
+        ${m.poster_path ? `<img src="${IMG}w154${m.poster_path}" alt="">` : '<div class="noimg"></div>'}
+        <div><div class="t">${esc(m.title)}</div>
+        <div class="s">${esc((m.release_date || '').slice(0,4) || '—')} · ${esc((m.original_language||'').toUpperCase())}${m.vote_average ? ' · ★ ' + m.vote_average.toFixed(1) : ''}</div></div>
+      </div>`).join('');
+    document.querySelectorAll('.row').forEach(el => el.onclick = () => detail(el.dataset.id));
+  } catch (e) { $('#out').innerHTML = `<p class="msg err">${esc(e.message)}</p>`; }
+}
+
+function chips(list, extraCls = '') {
+  return `<div class="chips">` + list.map(p => {
+    const yt = /youtube/i.test(p.provider_name) ? ' yt' : '';
+    return `<a class="chip${yt}" href="${esc(p._link)}" target="_blank" rel="noopener">
+      <img src="${IMG}w92${p.logo_path}" alt="">${esc(p.provider_name)}</a>`;
+  }).join('') + `</div>`;
+}
+
+async function detail(id) {
+  $('#out').innerHTML = '<p class="msg">Loading…</p>';
+  try {
+    const [m, w] = await Promise.all([ tmdb('/movie/' + id), tmdb(`/movie/${id}/watch/providers`) ]);
+    const r = (w.results || {})[state.region];
+    const link = r?.link || '#';
+    const tag = x => (x || []).map(p => ({ ...p, _link: link }));
+    const groups = [
+      ['Stream (subscription)', tag(r?.flatrate)],
+      ['Free / with ads', tag(r?.free).concat(tag(r?.ads))],
+      ['Rent', tag(r?.rent)],
+      ['Buy', tag(r?.buy)],
+    ].filter(g => g[1].length);
+
+    const ytq = encodeURIComponent(`${m.title} ${(m.release_date||'').slice(0,4)} full movie`);
+    $('#out').innerHTML = `
+      <button class="back" id="back">‹ Results</button>
+      <div class="hero">
+        ${m.poster_path ? `<img src="${IMG}w342${m.poster_path}" alt="">` : ''}
+        <div><h2>${esc(m.title)}</h2>
+          <div class="s" style="color:var(--muted)">${esc((m.release_date||'').slice(0,4))}${m.runtime ? ' · ' + m.runtime + ' min' : ''}</div>
+          <div class="s" style="color:var(--muted);margin-top:6px">${esc((m.genres||[]).map(g=>g.name).join(', '))}</div></div>
+      </div>
+      ${groups.length ? groups.map(([t, l]) => `<div class="sec">${t}</div>${chips(l)}`).join('')
+        : `<p class="msg">Not listed on any streaming service in ${esc(state.region)} right now.</p>`}
+      <a class="btn" href="https://www.youtube.com/results?search_query=${ytq}" target="_blank" rel="noopener">▶ Search YouTube for full movie</a>
+      ${r?.link ? `<a class="btn" href="${esc(r.link)}" target="_blank" rel="noopener">All options on JustWatch</a>` : ''}
+    `;
+    $('#back').onclick = () => search(lastQuery);
+  } catch (e) { $('#out').innerHTML = `<button class="back" id="back">‹ Results</button><p class="msg err">${esc(e.message)}</p>`; $('#back').onclick = () => search(lastQuery); }
+}
+
+if (!state.key) { showSettings(true); $('#testout').className = 'msg err'; $('#testout').textContent = 'Step 1: paste your TMDB API key above, tap Test key, then Save.'; }
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
